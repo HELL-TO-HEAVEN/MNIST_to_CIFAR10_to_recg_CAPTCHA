@@ -1,0 +1,224 @@
+# coding: UTF-8
+"""
+user: 五根弦的吉他
+function：
+注意：
+1、首先要清楚minist数据集的存储情况
+2、最后进行测试时，若直接用mnist.test.images、 mnist.test.labels来直接输入的话，test集太大了，gpu不够用，可考虑减少训练的特征（减少卷积核个数）,或用第三步来解决
+3、最后测试分批进行，计算每批次正确的个数，相加得到最终总正确个数，再对测试集的样本数进行百分比即可
+（注意对于mnist来说，此时最好不用tf.nn.in_top_k函数判断预测值与实际label的正确数，因为该函数一方面返回的是下标构成的向量，另一方面若传入实际值参数labels的话，
+因为mnist的label在之前选择one-hot处理是true，所以该形式是不符合in_top_k所要求的（找个例子看就明白了））
+  那么最好选用的是tf.argmax + tf.equal这种形式，跟计算训练精度时是一样的，只不过喂进去的数据是从测试集那里一批批喂进去而已
+
+"""
+import tensorflow as tf
+from tensorflow.examples.tutorials.mnist import input_data
+import math, random
+import numpy as np
+
+
+def weight(shape):      # 在卷积部分可理解为卷积核的权值，在全连接部分可理解为权重
+    w = tf.Variable(tf.truncated_normal(shape))        # 截断的正态分布中输出随机值,生成的值服从具有指定平均值和标准偏差的正态分布，如果生成的值大于平均值2个标准偏差的值则丢弃重新选择。
+    return w
+
+
+def bias(shape):
+
+    b = tf.Variable(tf.constant(0.1, shape=shape))
+    return b
+
+"""
+stride[b ,h ,w ,c]   (第一个参数与最后一个参数表示每次在一个特征图上的一个通道进行运算)
+    b表示在样本上的步长默认为1，也就是每一个样本都会进行运算。
+    h表示在高度上的默认移动步长为1，这个可以自己设定，根据网络的结构合理调节。
+    w表示在宽度上的默认移动步长为1，这个同上可以自己设定。
+    c表示在通道上的默认移动步长为1，这个表示每一个通道都会进行运算。
+    
+SAME：采用padding=(kernel_size-1)/2的话,表示padding是多少就加几层（圈），则运算后，宽度和高度不变
+
+"""
+def conv(in_tensor, kernel, strides=[1, 1, 1, 1], padding='SAME'):
+    result_conv = tf.nn.conv2d(in_tensor, kernel, strides=strides, padding=padding)
+    return result_conv
+
+
+def max_pool_2x2(in_tensor, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME'):
+    result_pool = tf.nn.max_pool(in_tensor, ksize=ksize, strides=strides, padding=padding)
+    return result_pool
+
+
+"""
+def top(input, label):
+    top_k = tf.nn.in_top_k(input, label, 1)
+    return top_k
+"""
+
+
+
+def simple_cnn(is_train):
+
+    mnist = input_data.read_data_sets('./MNIST_data',  one_hot=True)    # MNIST数据集自带one-hot属性
+
+    # 结合placeholder来看， None表示任意，应该代表batch
+    x = tf.placeholder(tf.float32, [None, 784])       # 结合mnist的存储方式来看
+    x_image = tf.reshape(x, [-1, 28, 28, 1])         # 卷积需要以图片（多维向量形式输入），需要reshape成四维张量； -1代表计算机自己计算（应该也是batch）
+    #y = tf.placeholder(tf.float32, [None, 10])
+    y = tf.placeholder(tf.int32, [None, 10])
+
+    batch_size = 50
+
+    # 定义各层kernel、bias的shape
+    k1_shape = [5, 5, 1, 32]         # kernel shape: [height, width, in_channel, out_channel]
+    b1_shape = [32]
+    k2_shape = [5, 5, 32, 64]
+    b2_shape = [64]
+
+    '''
+    法一：
+    全连接层的weight的shape可以先不写
+    可等到卷积层结束后看输出如何，再回头决定全连接层的weight的shape
+    法二：
+    直接用[-1, xxx]来让计算机自己计算该怎么取,这样的话卷积核便可随便取了
+    '''
+    w_fc1_shape = [7*7*64, 1024]      # 1024这个隐层节点数靠经验设
+    b_fc1_shape = [1024]
+    w_fc2_shape = [1024, 10]
+    b_fc2_shape = [10]
+    # 定义各层网络
+
+    # layer1(卷积层1)
+    kernel1 = weight(k1_shape)
+    b1 = bias(b1_shape)
+    val_c1 = max_pool_2x2(tf.nn.relu(conv(x_image, kernel1) + b1))   # 卷积、激活、池化
+
+    # layer2(卷积层2)
+    kernel2 = weight(k2_shape)
+    b2 = bias(b2_shape)
+    val_c2 = max_pool_2x2(tf.nn.relu(conv(val_c1, kernel2) + b2))  # 这层结束后输出64个7x7的feature map
+
+    # layer3(全连接层fc1)
+    fc1_in_tensor = tf.reshape(val_c2, [-1, 7*7*64])      # 将上一层的输出转成一维向量，具体转成几个让它自己计算（联想全连接即可理解，最开始的数据肯定是一批一批输入的）
+    w_fc1 = weight(w_fc1_shape)                           # 即全连接层里，中间层的输出(其作为下一层的输入)肯定是一个矩阵，batch_size是多少就有多少行
+    b_fc1 = bias(b_fc1_shape)                             # 列数即为该全连接中间层的神经元个数
+    val_fc1 = tf.nn.relu(tf.matmul(fc1_in_tensor, w_fc1) + b_fc1)
+
+    # layer4(全连接层fc2, 这里加个dropout)
+    keep_prob = tf.placeholder(tf.float32)             # dropout
+    fc2_in_tensor = tf.nn.dropout(val_fc1, keep_prob)
+
+    w_fc2 = weight(w_fc2_shape)
+    b_fc2 = bias(b_fc2_shape)
+
+    val_fc2 = tf.matmul(fc2_in_tensor, w_fc2) + b_fc2         # 最后一层输出层不要激活，直接输出加权求和，因为下面会用softmax_cross_entropy_with_logits,他会把这个工作顺带做了
+
+    #top_k = top(val_fc2, y)
+
+    # 损失定义
+    cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=val_fc2, labels=y))    # logits是网络得到的结果，labels是输入数据label即y占位符
+
+    loss_summary = tf.summary.scalar('losses', cross_entropy)     # 表示要记录cross_entropy这个标量，以losses的名义
+
+    # 优化器
+    train_step = tf.train.AdamOptimizer(0.0001).minimize(cross_entropy)
+
+    # 计算精度
+    correct_prediction = tf.equal(tf.argmax(val_fc2, 1), tf.argmax(y, 1))  # argmax函数
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+
+    """
+    设置saver对象，用于保存模型, 注意是tf.train.Saver(max_to_keep=),其中
+    max_to_keep参数默认是5，表示保存的是最近的5个模型
+    """
+    saver = tf.train.Saver()
+
+    # 开启会话进行训练
+    with tf.Session() as sess:
+        init = tf.initialize_all_variables()
+        sess.run(init)
+
+        # 定义合并操作与写入文件操作
+        merge_summary = tf.summary.merge([loss_summary])
+        train_writer = tf.summary.FileWriter('conv_train_logs/', sess.graph)
+
+        if is_train:
+            # 开始训练
+            for i in range(1, 5001):
+                x_batch, y_batch = mnist.train.next_batch(batch_size=batch_size)
+
+                """
+                必须sess.run的几个操作： 优化器、合并summary，（若要打印损失和精度，还可包括loss，accuracy）
+                """
+
+                sess.run(train_step, feed_dict={x: x_batch, y: y_batch, keep_prob: 0.7})  # 所有定义过placeholder的都要写入feed_dict
+
+                train_summary = sess.run(merge_summary, feed_dict={x: x_batch, y: y_batch, keep_prob: 0.7})
+
+                train_writer.add_summary(train_summary, global_step=i)
+
+                if i % 100 == 0:
+                    loss = sess.run(cross_entropy, feed_dict={x: x_batch, y: y_batch, keep_prob: 1.0})
+                    accuracies = sess.run(accuracy, feed_dict={x: x_batch, y: y_batch, keep_prob: 1.0})
+                    print('After %s steps, the train loss is %g,'
+                          'the train accuracy is %g' % (i, loss, accuracies))
+                    # 保存模型
+                    saver.save(sess, 'CONV_MNIST_model/my_mnist_model.ctpk', global_step=i)
+
+            """
+            # 测试精度
+            # gpu不够内存
+            print('Training done!'
+                  '\nThe accuracy is %g'
+                  % (sess.run(accuracy, feed_dict={x: mnist.test.images, y: mnist.test.labels, keep_prob: 1.0})))
+            """
+
+            test_num = 10000
+            iter_num = int(math.ceil(test_num/batch_size))  # 总批数
+            total = iter_num * batch_size
+            correct_num = 0
+            iter = 0   # 批次
+
+            while iter < iter_num:
+                x_batch_test, y_batch_test = mnist.test.next_batch(batch_size=batch_size)
+                prediction = sess.run(correct_prediction, feed_dict={x: x_batch_test, y: y_batch_test, keep_prob: 1.0})
+                correct_num += np.sum(prediction)
+                iter += 1
+
+            print("DONE! Test accuracy:", correct_num/total)
+
+        # 若标志位为False则表示输入数据进行模型测试
+        else:
+            model_path = tf.train.latest_checkpoint(checkpoint_dir='CONV_MNIST_model/')
+            saver.restore(sess, model_path)
+
+            # 随机提取MNIST的一个样本数据和标签
+            index = random.choice(range(len(mnist.test.images)))
+            real_image = mnist.test.images[index]
+            real_label = mnist.test.labels[index]
+
+            # 给出标签的1值（最大值）位置的下标， 用下标来进行预测比较
+            #true = tf.argmax(real_label, axis=1)   # axis=1 为行
+            #true = sess.run(true, feed_dict={x: [real_image], keep_prob: 1.0})
+            true = np.argmax(real_label)  # 加上axis=1会报错
+
+            pre = tf.argmax(tf.nn.softmax(val_fc2), axis=1)
+            # 计算预测值
+            """
+            # 只是进行测试，不是进行模型训练，不用喂label数据
+            # 同时注意：这里只是输入一个样本进行测试，即[x,x,x,x,x,……]784维的
+            # 而之前定义的placeholder是二维张量，所以只输入一个样本时需要再加一个[]
+            """
+            pre = sess.run(pre, feed_dict={x: [real_image], keep_prob: 1.0})
+            print("*"*50)
+            print("预测完成！ 预测值是：{}, 正确值是：{}".format(pre[0], true))
+
+
+if __name__ == '__main__':
+
+    """
+    设一个标志位来控制进行模型的训练还是模型的使用验证
+    """
+    is_train = False
+
+    simple_cnn(is_train)
+
+
