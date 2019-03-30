@@ -1,4 +1,4 @@
-#96NIST_to_CIFAR10_to_recg_CAPTCHA
+# MNIST_to_CIFAR10_to_recg_CAPTCHA
 
   最近想把神经网络应用于爬虫的验证码识别，从分类角度着手的话，上学期实践过的mnist和cifar10可作为自定义图片数据集比较好的一个参考<br>
   这次打算用一个自己标注的数据集进行实验，网络结构和mnist一样。<br>
