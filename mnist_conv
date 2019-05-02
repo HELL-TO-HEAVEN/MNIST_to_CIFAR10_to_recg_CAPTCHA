@@ -100,7 +100,8 @@ def simple_cnn(is_train):
     val_c2 = max_pool_2x2(tf.nn.relu(conv(val_c1, kernel2) + b2))  # 这层结束后输出64个7x7的feature map
 
     # layer3(全连接层fc1)
-    fc1_in_tensor = tf.reshape(val_c2, [-1, 7*7*64])      # 将上一层的输出转成一维向量，具体转成几个让它自己计算（联想全连接即可理解，最开始的数据肯定是一批一批输入的）
+    fc1_in_tensor = tf.reshape(val_c2, [-1, 7*7*64])      # 将上一层的输出转成一维向量，具体转成几个让它自己计算（联想全连接即可理解，最开始的数据肯定是一批一批输入的）;
+                                                          # 甚至把前者设为batchsize，后者设为-1也行，这样就不用想后者是多少了
     w_fc1 = weight(w_fc1_shape)                           # 即全连接层里，中间层的输出(其作为下一层的输入)肯定是一个矩阵，batch_size是多少就有多少行
     b_fc1 = bias(b_fc1_shape)                             # 列数即为该全连接中间层的神经元个数
     val_fc1 = tf.nn.relu(tf.matmul(fc1_in_tensor, w_fc1) + b_fc1)
@@ -164,7 +165,7 @@ def simple_cnn(is_train):
                     print('After %s steps, the train loss is %g,'
                           'the train accuracy is %g' % (i, loss, accuracies))
                     # 保存模型
-                    saver.save(sess, 'CONV_MNIST_model/my_mnist_model.ctpk', global_step=i)
+                    saver.save(sess, 'CONV_MNIST_model/my_mnist_model.ckpt', global_step=i)
 
             """
             # 测试精度
