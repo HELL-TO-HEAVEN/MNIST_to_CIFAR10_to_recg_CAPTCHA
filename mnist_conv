@@ -65,8 +65,8 @@ def simple_cnn(is_train):
     # 结合placeholder来看， None表示任意，应该代表batch
     x = tf.placeholder(tf.float32, [None, 784])       # 结合mnist的存储方式来看
     x_image = tf.reshape(x, [-1, 28, 28, 1])         # 卷积需要以图片（多维向量形式输入），需要reshape成四维张量； -1代表计算机自己计算（应该也是batch）
-    #y = tf.placeholder(tf.float32, [None, 10])
-    y = tf.placeholder(tf.int32, [None, 10])
+    #y = tf.placeholder(tf.float32, [None, 10])     # 喂数据的入口
+    y = tf.placeholder(tf.int32, [None, 10])        # 喂数据的入口
 
     batch_size = 50
 
